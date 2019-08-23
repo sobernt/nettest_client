@@ -24,15 +24,15 @@ int Ping::do_ping(in_addr& ip_addr,
            uint16_t& packet_length,
            uint16_t& ping_timeout)
 {
-    char* datapart;
     timeout = {PING_REPLY_TIMEOUT, 0};
     reset_packet_stat();
 
     connect_addr.sin_addr = ip_addr;
 
     int full_packet_length = packet_length+sizeof icmp_hdr;
-    sprintf(datapart, "PING %s %i (%i) bytes of data.\n",ip_addr, packet_length,full_packet_length);
-    textstream<<datapart;
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(connect_addr.sin_addr), ip_str, INET_ADDRSTRLEN);
+    textstream<<"PING "<< ip_str <<" "<<packet_length<<" ("<<full_packet_length<<") bytes of data.\n";
     sock = socket(AF_INET,is_tcp?SOCK_PACKET :SOCK_DGRAM,IPPROTO_ICMP);
     if (sock < 0) {
         textstream<<"can't open socket";
@@ -62,14 +62,8 @@ int Ping::do_ping(in_addr& ip_addr,
             textstream<<"Time Exceeded\n";
             break;
         case SUCCESS:
-            memset(&datapart,0,sizeof datapart);
-            sprintf(datapart, "echo: %i(%i) bytes from %s icmp_seq=%i time=%s ms\n",
-                     ping_res.reply_bytes,
-                     ping_res.reply_bytes_full,
-                     ip_addr,
-                     ping_res.seq,
-                     format_double_to_str(ping_res.req_time,2));
-            textstream<<datapart;
+                textstream<<"echo:  "<< ping_res.reply_bytes <<"("<<ping_res.reply_bytes_full<<")  bytes from "
+                <<ip_str<<" icmp_seq="<<ping_res.seq<<" time="<<format_double_to_str(ping_res.req_time,2)<<" ms\n";
             break;
         default:
             textstream<<"Got ICMP packet with unknown type\n";
@@ -146,8 +140,7 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length){
          return result;
      }
 
-     sock_len = 0;
-     recive_length = recvfrom(sock, data_in, sizeof data_in, 0, NULL, &sock_len);
+     recive_length = recvfrom(sock, data_in, sizeof data_in, 0, NULL, 0);
      if (recive_length <= 0) {
          result.result_code = ERROR_REPLY_READ;
          return result;

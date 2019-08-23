@@ -4,6 +4,7 @@
 
     namespace std {
     enum nettest_command{
+        nettest_command_default,
         nettest_command_exit,
         nettest_command_exit_req,
         nettest_command_ping,
@@ -21,6 +22,12 @@
         struct nettest_header{
             nettest_command command;
             size_t size;
+        };
+        struct nettest_body{
+            size_t size;
+            uint16_t seq;
+            uint16_t seq_count;
+            char data[512];
         };
     }
 #endif // NETTEST_H

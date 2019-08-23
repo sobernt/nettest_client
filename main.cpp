@@ -22,14 +22,17 @@
 #include <string.h>
 #include <ping.h>
 #include <nettest.h>
+#include <math.h>
+#include <limits.h>
 using namespace std;
 
 #define SOCKET_PORT 5001
 #define BUFFER_SIZE 10192
-#define SOCKET_READ_RIMEOUT = 16
+#define SOCKET_READ_TIMEOUT 16
+#define SOCKET_PING_REPLY_RIMEOUT = 120
     sockaddr_in sockAddr;
     int sock;
-const char* do_ping(query_ping command){
+string do_ping(query_ping command){
     /*
      * comand:ping
      * host_ip:8.8.8.8
@@ -40,18 +43,52 @@ const char* do_ping(query_ping command){
     */
     Ping ping;
     string dataping;
-    string buff;
+    string buff = "";
     ping.do_ping(command);
     while (std::getline(ping.textstream, buff)) {
         dataping.append(buff);
+        dataping.append("\n");
     }
-    return dataping.data();
+    return dataping;
 }
 
-
+int send_str_by_parts(string str){
+    nettest_body body;
+    bzero(&body,sizeof body);
+    int bytesWrited;
+    int result = 0;
+    const char* all_data = str.data();
+    uint16_t strsize = str.size();
+    body.seq_count = ceil((double)strsize/512);
+    for(int8_t i=0;i<body.seq_count;i++){
+        char* datapart;
+        body.seq = i;
+        for(uint16_t charpoint = 0;charpoint < 512;charpoint++){
+            uint16_t dataindex = (body.seq+(512*i))+charpoint;
+            if(dataindex>str.length()){
+                break;
+            }
+            body.data[charpoint] = all_data[dataindex];
+        }
+        body.size = strlen(body.data);
+        bytesWrited = send(sock , (struct nettest_body *) &body , sizeof body,0);
+        if (bytesWrited <= 0) {
+            usleep(SOCKET_READ_TIMEOUT);
+            bytesWrited = send(sock , (struct nettest_body *) &body , sizeof body,0);
+            if (bytesWrited <= 0) {
+                return -1;
+            }
+        }
+        result+=bytesWrited;
+        return result;
+    }
+}
 int main() {
+    fd_set read_set;
+    FD_ZERO(&read_set);
     sock = socket(PF_INET, SOCK_STREAM,IPPROTO_TCP);
 
+    struct timeval timeout = {SOCKET_READ_TIMEOUT, 0};
     if(sock == -1){
         perror("Failed open socket");
         exit(EXIT_FAILURE);
@@ -67,7 +104,7 @@ int main() {
             close(sock);
             exit(EXIT_FAILURE);
     }
-    if (listen(sock, 10) == -1) {
+    if (listen(sock, 1) == -1) {
             perror("Lissen socket error");
             close(sock);
             exit(EXIT_FAILURE);
@@ -82,44 +119,78 @@ int main() {
             close(sock);
             exit(EXIT_FAILURE);
         }
-        nettest_command command;
-        int bytesReaded;
+        nettest_header command;
+        int bytesReaded = 0;
+        bzero(&command, sizeof command);
+        int8_t sets_count = 0;
         while(true){
-            do{
-                bytesReaded =  recv(sock,&command,(sizeof command),MSG_NOSIGNAL);
+
+            memset(&read_set, 0, sizeof read_set);
+            FD_SET(sock, &read_set);
+
+
+            sets_count = select(sock + 1, &read_set, NULL, NULL, &timeout);
+
+            if (sets_count == 0) {
+                usleep(SOCKET_READ_TIMEOUT);
+                continue;
+            } else if (sets_count < 0) {
+                usleep(SOCKET_READ_TIMEOUT);
+                continue;
             }
-            while(bytesReaded <0);
-                if(command == nettest_command_exit){
-                    char* data = 0;
+            bytesReaded = recv(sock, (struct nettest_header *)&command, sizeof command,0);
+            if (bytesReaded <= 0) {
+                usleep(SOCKET_READ_TIMEOUT);
+                continue;
+            } else if (bytesReaded == 0) {
+                usleep(SOCKET_READ_TIMEOUT);
+                continue;
+            }
+
+                if(command.command == nettest_command_exit){
                     nettest_header header;
+                    bzero(&header, sizeof header);
                     header.command = nettest_command_exit_req;
                     header.size = 0;
-                    memcpy(data, &header, sizeof header);
-                    send(sock , data , sizeof(data),MSG_NOSIGNAL);
+                    send(sock , (struct nettest_header *) &header , sizeof header,0);
+                    usleep(SOCKET_READ_TIMEOUT);
                     break;
-                }
-                if(command == nettest_command_ping){
+                } else
+                if(command.command == nettest_command_ping){
                     query_ping ping_comand;
-                    const char* ping_data = 0;
-                    char* data = 0;
+                    string ping_data = "";
+                    int count_sended = 0;
                     memset(&ping_comand,0,sizeof ping_comand);
-                    bytesReaded =  recv(sock,&ping_comand,(sizeof ping_comand),MSG_NOSIGNAL);
+
+                    bytesReaded = recv(sock, (struct query_ping *)&ping_comand, sizeof ping_comand,0);
+                    if (bytesReaded <= 0) {
+                        usleep(SOCKET_READ_TIMEOUT);
+                        continue;
+                    } else if (bytesReaded == 0) {
+                        usleep(SOCKET_READ_TIMEOUT);
+                        continue;
+                    }
 
                     ping_data = do_ping(ping_comand);
                     nettest_header header;
 
+                    bzero(&header, sizeof header);
+
                     header.command = nettest_command_ping_reply;
-                    header.size = strlen(ping_data);
+                    header.size = ping_data.size();
 
-                    memcpy(data, &header, sizeof header);
-                    memcpy(data + sizeof header, ping_data, strlen(ping_data));
-
-                    send(sock , data , sizeof(data),MSG_NOSIGNAL);
+                    send(sock ,(struct nettest_header *)  &header , + sizeof header,0);
+                    count_sended = send_str_by_parts(ping_data);
+                } else {
+                    char* broken_buff;
+                    bzero(&broken_buff,command.size);
+                    recv(sock,(char *) &broken_buff,(command.size),MSG_WAITALL);
+                    //read undefined packet from buffer for clear him.
                 }
-
         }
         shutdown(sock, SHUT_RDWR);
-
         close(sock);
+
+        return 0;
 }
 
