@@ -166,8 +166,6 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length,bool is_tc
     char data_in[packet_size];
     char payload[packet_length];
 
-
-
     bzero(data,sizeof data);
     bzero(data_in,sizeof data_in);
     bzero(&recive_header,sizeof recive_header);
@@ -183,7 +181,6 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length,bool is_tc
     icmp_hdr.code = 0;
     icmp_hdr.un.echo.id = getpid();
     icmp_hdr.un.echo.sequence = seq+1;
-    memcpy(&icmp_hdr+sizeof (iphdr),payload,packet_length);
     icmp_hdr.checksum = 0;
 
     ipc_header.protocol = IPPROTO_ICMP;
@@ -210,7 +207,6 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length,bool is_tc
                       sizeof connect_addr);
       if (send_length <= 0) {
           result.result_code = ERROR_SOCKET_SEND;
-          return result;
       }
 
       count_transmitted++;
@@ -219,13 +215,11 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length,bool is_tc
       FD_SET(sock, &read_set);
 
 
-     recive_length = select(sock + 1, &read_set, NULL, NULL, &timeout);
+     recive_length = select(sock, &read_set, NULL, NULL, &timeout);
      if (recive_length == 0) {
          result.result_code = ERROR_REPLY_READ_TIMEOUT;
-         return result;
      } else if (recive_length < 0) {
          result.result_code = ERROR_REPLY_READ;
-         return result;
      } else{
 
      recive_length = recvfrom(sock, data_in, packet_size
@@ -251,7 +245,6 @@ Ping::ping_result Ping::send_ping(uint16_t seq,uint16_t packet_length,bool is_tc
              count_recived++;
          }
      }
-     return result;
     }
     return result;
 }
