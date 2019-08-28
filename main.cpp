@@ -86,6 +86,13 @@ int send_str_by_parts(string str){
 int main() {
     fd_set read_set;
     FD_ZERO(&read_set);
+
+    if(getuid() != 0)
+    {
+       fprintf(stderr, "root privileges needed\n");
+       exit(EXIT_FAILURE);
+    }
+
     sock = socket(PF_INET, SOCK_STREAM,IPPROTO_TCP);
 
     struct timeval timeout = {SOCKET_READ_TIMEOUT, 0};
